@@ -105,6 +105,40 @@ async function main() {
     body: "次日。\n\n她启程。",
   });
   await callOrg(c2, "denova_list_chapters", {});
+
+  // Regression: denova_read_chapter must accept the exact relPath returned by
+  // denova_list_chapters (which includes the "chapters/" prefix) without ENOENT.
+  const listRes = await c2.call("denova_list_chapters", {});
+  const chapters = (listRes.content || [])
+    .map((x) => x.text || "")
+    .join("")
+    .trim();
+  console.log("\n### list chapters (for read-back test) ->\n", chapters);
+  let parsed;
+  try {
+    parsed = JSON.parse(chapters);
+  } catch (e) {
+    console.error("!! FAIL: denova_list_chapters returned invalid JSON");
+    process.exit(1);
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 2) {
+    console.error("!! FAIL: expected 2 chapters from denova_list_chapters ->", parsed);
+    process.exit(1);
+  }
+  for (const ch of parsed) {
+    if (typeof ch.relPath !== "string" || !ch.relPath.startsWith("chapters/")) {
+      console.error("!! FAIL: chapter relPath must include chapters/ prefix ->", ch);
+      process.exit(1);
+    }
+    const readRes = await c2.call("denova_read_chapter", { chapter: ch.relPath });
+    const body = (readRes.content || []).map((x) => x.text || "").join("");
+    if (!body || body.includes("ENOENT") || body.includes("找不到")) {
+      console.error(`!! FAIL: read back chapter via relPath failed -> ${ch.relPath}`);
+      console.error(body.slice(0, 500));
+      process.exit(1);
+    }
+  }
+  console.log("read-back via list relPath: OK");
   await callOrg(c2, "denova_write_lore_items", {
     items: [
       { id: "char_mei", name: "女孩", content: "主角。", type: "character", importance: "major", tags: [] },
