@@ -212,7 +212,7 @@ export function listChapters(projectDir: string): ChapterRef[] {
             order: parseInt(m[1], 10),
             title: m[2],
             filename: n,
-            relPath,
+            relPath: path.posix.join("chapters", relPath),
             bytes: fs.statSync(full).size,
           });
         }
@@ -246,10 +246,10 @@ export function buildChapterRelPath(projectDir: string, opts: ChapterWriteOption
   );
   const filename = `ch${String(order).padStart(5, "0")}-${safeTitle}.md`;
 
-  // Volume mode if any existing chapter lives in a subdirectory.
+  // Volume mode if any existing chapter lives in a chapters/<volume>/ subdir.
+  const hasVolumes = existing.some((c) => c.relPath.split("/").length > 2);
   const volumeMode =
-    opts.volumeDir !== null &&
-    (existing.some((c) => c.relPath.includes("/")) || opts.volumeDir !== undefined);
+    opts.volumeDir !== null && (hasVolumes || opts.volumeDir !== undefined);
 
   if (!volumeMode) {
     return path.posix.join("chapters", filename);
@@ -281,7 +281,11 @@ export function readChapter(projectDir: string, orderOrPath: string | number): {
     ch = chapters.find((c) => c.order === orderOrPath);
   } else {
     const s = String(orderOrPath).trim();
-    ch = chapters.find((c) => c.relPath === s || c.filename === s || c.title === s);
+    // 兼容带/不带 chapters/ 前缀的路径：
+    //   "chapters/ch00001-x.md" | "ch00001-x.md"
+    //   "chapters/v00001-卷/ch00001-x.md" | "v00001-卷/ch00001-x.md"
+    ch = chapters.find((c) => c.relPath === s);
+    if (!ch) ch = chapters.find((c) => c.relPath.endsWith("/" + s) || c.filename === s || c.title === s);
     if (!ch && /^\d+$/.test(s)) ch = chapters.find((c) => c.order === parseInt(s, 10));
   }
   if (!ch) return null;
